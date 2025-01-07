@@ -1,22 +1,44 @@
-import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
+import mysql2 from 'mysql2';  // Import mysql2
+import bcrypt from 'bcryptjs'; // Import bcryptjs for password hashing
 
-const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  role: { type: String, enum: ['user', 'admin'], default: 'user' },
-}, { timestamps: true });
-
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
+// Create a MySQL connection pool
+const pool = mysql2.createPool({
+  host: process.env.MYSQL_HOST,
+  user: process.env.MYSQL_USER,
+  password: process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_DATABASE
 });
 
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+// Function to create a new user
+const createUser = async (username, email, password) => {
+  // Hash the password before saving
+  const hashedPassword = await bcrypt.hash(password, 12);
+
+  // SQL query to insert a new user
+  const query = 'INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)';
+  const values = [username, email, hashedPassword, 'user']; // Default role is 'user'
+
+  return new Promise((resolve, reject) => {
+    pool.query(query, values, (err, result) => {
+      if (err) return reject(err);
+      resolve(result);
+    });
+  });
 };
 
-export default mongoose.model('User', userSchema);
+// Function to compare a password (for login)
+const comparePassword = async (inputPassword, hashedPassword) => {
+  return await bcrypt.compare(inputPassword, hashedPassword);
+};
 
+// Function to fetch user by email
+const findUserByEmail = (email) => {
+  return new Promise((resolve, reject) => {
+    pool.query('SELECT * FROM users WHERE email = ?', [email], (err, result) => {
+      if (err) return reject(err);
+      resolve(result[0]); // Return the first user found
+    });
+  });
+};
+
+export { createUser, comparePassword, findUserByEmail };
